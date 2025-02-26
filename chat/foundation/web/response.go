@@ -18,7 +18,7 @@ func NewNoResponse() NoResponse {
 
 // Encode implements the Encoder interface
 func (NoResponse) Encode() ([]byte, string, error) {
-	return []byte("No Response from omer again and again"), "", nil
+	return []byte("No Response from omer again and again"), "application/json", nil
 }
 
 type HttpStatus interface {
@@ -30,6 +30,7 @@ func Respond(cxt context.Context, w http.ResponseWriter, dataModel Encoder) erro
 	_, ok := dataModel.(NoResponse)
 	if ok {
 		data, _, _ := dataModel.Encode()
+		// w.Header().Set("Content-Type", contentType)
 		w.Write(data)
 		return nil
 	}

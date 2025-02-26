@@ -26,7 +26,7 @@ func WebAPI(config Config) http.Handler {
 
 	// here we need to connect the routes of my app in order to be known to the mux and therefore become able to
 	// perform task according to the path patterns (routes will be in the app/ domain level / chatapp.go)
-	chatapp.Routes(app)
+	chatapp.Routes(app, config.Log)
 	return app // this app is actually a http.Handler because it implement Handler interface
 	//type Handler interface {
 	// ServeHTTP(ResponseWriter, *Request)

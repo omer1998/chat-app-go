@@ -13,6 +13,7 @@ import (
 
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/mux"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/logger"
+	"github.com/omer1998/chat-app-go.git/chat/foundation/web"
 )
 
 func main() {
@@ -21,7 +22,10 @@ func main() {
 	// }
 	cxt := context.Background()
 	// log := logger.NewWithHandler(slog.NewJSONHandler(os.Stdout, nil))
-	log := logger.New(os.Stdout, logger.LevelDebug, "CAP", nil)
+	traceIdFun := func(cxt context.Context) string {
+		return web.GetTraceId(cxt).String()
+	}
+	log := logger.New(os.Stdout, logger.LevelDebug, "CAP", traceIdFun)
 	log.Info(cxt, "intialize the CAP service", "name", slog.StringValue("omer"))
 	// doneChan := make(chan bool, 1)
 	if err := run(cxt, log); err != nil {
