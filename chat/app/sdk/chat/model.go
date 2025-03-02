@@ -5,12 +5,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type connection struct {
-	id   uuid.UUID
-	name string
-	conn *websocket.Conn
-}
-
 type User struct {
 	Id   uuid.UUID
 	Name string
@@ -18,12 +12,10 @@ type User struct {
 }
 
 type InMessage struct {
-	FromId uuid.UUID `json:"fromId"`
-	ToId   uuid.UUID `json:"toId"`
-	Msg    string    `json:"msg"`
+	ToId uuid.UUID `json:"toId"`
+	Msg  string    `json:"msg"`
 }
 type OutMessage struct {
-	From User   `json:"from"`
-	To   User   `json:"to"`
-	Msg  string `json:"msg"`
+	To  User   `json:"to"`
+	Msg string `json:"msg"`
 }

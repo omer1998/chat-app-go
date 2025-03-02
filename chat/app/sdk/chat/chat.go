@@ -97,27 +97,13 @@ func (cht *Chat) Listen(cxt context.Context, user User) {
 		data, err := cht.readMessages(cxt, user) //in readmessgae we already handle the logic of removing user if connection closed
 		// here we only need to decide if close error we need to return else continue
 		if err != nil {
-			cht.log.Info(cxt, "listen-readmsg", "status", "failed", "error", err)
-			// fmt.Println("read messgae error type ", reflect.TypeOf(err))
-			// return
-			switch err.(type) {
-			case *websocket.CloseError:
-				cht.log.Info(cxt, "listen-readmsg", "status", "client disconnected", "error websocket close", err.Error())
-
+			if cht.isCriticalError(cxt, err) {
 				return
-			case *net.OpError:
-				cht.log.Info(cxt, "listen-readmsg", "status", "client disconnected", "error operation close", err.Error())
-
-				return
-			default:
-				if errors.Is(err, context.Canceled) {
-					cht.log.Info(cxt, "listen-readmsg", "status", "cliend closed")
-					return
-				}
-				continue
-
 			}
+			continue
+
 		}
+
 		var msg InMessage
 		err = json.Unmarshal(data, &msg)
 		if err != nil {
@@ -136,19 +122,14 @@ func (cht *Chat) sendMessage(message InMessage) error {
 	cht.mu.RLock()
 	defer cht.mu.RUnlock()
 
-	from, exist := cht.users[message.FromId]
-	if !exist {
-		return fmt.Errorf("from user not exist")
-	}
 	to, exist := cht.users[message.ToId]
 	if !exist {
 		return fmt.Errorf("to user not exist")
 	}
 	// we need to write message to the connection of the to user
 	msg := OutMessage{
-		From: User{Id: from.Id, Name: from.Name},
-		To:   User{Id: to.Id, Name: to.Name},
-		Msg:  message.Msg,
+		To:  User{Id: to.Id, Name: to.Name},
+		Msg: message.Msg,
 	}
 	if err := to.Conn.WriteJSON(msg); err != nil {
 		// here also if we can't send message
@@ -276,7 +257,7 @@ func (c *Chat) isCriticalError(ctx context.Context, err error) bool {
 		return true
 	case *net.OpError:
 		c.log.Info(ctx, "chat-isCriticalError", "status", "client disconnected - op error", "error", err)
-
+		return true
 	default:
 		if errors.Is(err, context.Canceled) {
 			c.log.Info(ctx, "chat-isCriticalError", "status", "client canceled")
@@ -286,6 +267,5 @@ func (c *Chat) isCriticalError(ctx context.Context, err error) bool {
 		c.log.Info(ctx, "chat-isCriticalError", "err", err)
 		return false
 	}
-	return false
 
 }

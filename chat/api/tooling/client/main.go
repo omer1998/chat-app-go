@@ -127,9 +127,9 @@ func hack2(conn *websocket.Conn, meUser chatapp.User, toUser chatapp.User) error
 		reader := bufio.NewReader(os.Stdin)
 		line, _, _ := reader.ReadLine()
 		msg := chat.InMessage{
-			FromId: meUser.Id,
-			ToId:   toUser.Id,
-			Msg:    string(line),
+
+			ToId: toUser.Id,
+			Msg:  string(line),
 		}
 		err := conn.WriteJSON(msg)
 		if err != nil {
