@@ -37,6 +37,7 @@ func main() {
 		return
 	}
 	defer clientConn.Close()
+
 	id, _ := strconv.Atoi(os.Args[1])
 	usersId := []string{
 		"1b0deec0-5c9d-42bd-98ee-59e39d5a8105",
@@ -65,12 +66,13 @@ func main() {
 
 	if err := hack2(clientConn, meUser, toUser); err != nil {
 		fmt.Println("error hack2 %w", err)
+		return
 	}
 
 }
 
 func hack2(conn *websocket.Conn, meUser chatapp.User, toUser chatapp.User) error {
-
+	defer conn.Close()
 	_, data, err := conn.ReadMessage()
 	if err != nil {
 		return errs.Newf(errs.Internal, "error reading msg from connection %s: ", err.Error())
@@ -102,49 +104,45 @@ func hack2(conn *websocket.Conn, meUser chatapp.User, toUser chatapp.User) error
 
 	go func() {
 		for {
-			reader := bufio.NewReader(os.Stdin)
-			line, _, _ := reader.ReadLine()
-			msg := chat.InMessage{
-				FromId: meUser.Id,
-				ToId:   toUser.Id,
-				Msg:    string(line),
-			}
-			err := conn.WriteJSON(msg)
-			if err != nil {
-				fmt.Printf("error writing message to %s, err : %s", toUser.Id.String(), err.Error())
-				conn.Close()
-				return
-			}
-
-		}
-	}()
-	msgChan := make(chan string)
-	go func() {
-		for {
+			defer conn.Close()
 			_, data, err := conn.ReadMessage()
 			if err != nil {
+
 				fmt.Printf("error reading msg: %s ", err.Error())
-				close(msgChan)
 				return
 			}
 			var outMessage chat.OutMessage
 			if err := json.Unmarshal(data, &outMessage); err != nil {
 				fmt.Printf("error unmarshling msg: %s ", err.Error())
-				close(msgChan)
 				return
 			}
-			msgChan <- string(fmt.Sprintf("%s: %s", outMessage.From.Name, outMessage.Msg))
+			fmt.Println("\nmessage from server: ", outMessage.Msg)
+
 		}
 	}()
 
-	for msg := range msgChan {
-		fmt.Printf("msg from server: %s\n", msg)
+	for {
+		fmt.Printf("message> ")
+
+		reader := bufio.NewReader(os.Stdin)
+		line, _, _ := reader.ReadLine()
+		msg := chat.InMessage{
+			FromId: meUser.Id,
+			ToId:   toUser.Id,
+			Msg:    string(line),
+		}
+		err := conn.WriteJSON(msg)
+		if err != nil {
+			conn.Close()
+
+			return fmt.Errorf("error writing message to %s, err : %s", toUser.Id.String(), err.Error())
+
+		}
+
 	}
 
 	// here we want to send msg to specific user
-
 	return nil
-
 }
 func hack1(clientConn *websocket.Conn) {
 

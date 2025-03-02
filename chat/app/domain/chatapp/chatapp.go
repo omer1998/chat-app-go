@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gorilla/websocket"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/errs"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/logger"
@@ -29,18 +28,8 @@ func (a app) Test(cxt context.Context, r *http.Request) web.Encoder {
 }
 func (a app) connect(cxt context.Context, r *http.Request) web.Encoder {
 	// fmt.Println("request", r)
-	upgrader := websocket.Upgrader{
-		// CheckOrigin: func(r *http.Request) bool {
-		// 	return true
-		// },
-	}
 
-	conn, err := upgrader.Upgrade(web.GetWriter(cxt), r, nil)
-	if err != nil {
-		return errs.Newf(errs.Internal, "error upgrading server to websocket %s", err.Error())
-	}
-
-	err = a.chat.Handshake(conn)
+	user, err := a.chat.Handshake(cxt, web.GetWriter(cxt), r)
 	if err != nil {
 		return errs.Newf(errs.Internal, "error handshake %s: ", err.Error())
 	}
@@ -49,7 +38,7 @@ func (a app) connect(cxt context.Context, r *http.Request) web.Encoder {
 	// and direct sending message accordingly
 	// cxtWithCancel, cancel := context.WithCancel(context.Background())
 	// defer cancel()
-	a.chat.Listen(context.Background(), conn)
+	a.chat.Listen(context.Background(), user)
 
 	return web.NewNoResponse()
 }

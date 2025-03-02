@@ -11,9 +11,10 @@ type connection struct {
 	conn *websocket.Conn
 }
 
-type user struct {
+type User struct {
 	Id   uuid.UUID
 	Name string
+	Conn *websocket.Conn
 }
 
 type InMessage struct {
@@ -22,7 +23,7 @@ type InMessage struct {
 	Msg    string    `json:"msg"`
 }
 type OutMessage struct {
-	From user   `json:"from"`
-	To   user   `json:"to"`
+	From User   `json:"from"`
+	To   User   `json:"to"`
 	Msg  string `json:"msg"`
 }
