@@ -1,14 +1,24 @@
 package chat
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
 type User struct {
-	Id   uuid.UUID
-	Name string
-	Conn *websocket.Conn
+	Id       uuid.UUID
+	Name     string
+	Conn     *websocket.Conn
+	LastPing time.Time
+	LastPong time.Time
+}
+
+type Connection struct {
+	LastPong time.Time
+	LastPing time.Time
+	Conn     *websocket.Conn
 }
 
 type InMessage struct {
@@ -16,6 +26,6 @@ type InMessage struct {
 	Msg  string    `json:"msg"`
 }
 type OutMessage struct {
-	To  User   `json:"to"`
-	Msg string `json:"msg"`
+	From User   `json:"to"`
+	Msg  string `json:"msg"`
 }

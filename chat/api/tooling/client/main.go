@@ -14,7 +14,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/omer1998/chat-app-go.git/chat/app/domain/chatapp"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat"
-	"github.com/omer1998/chat-app-go.git/chat/app/sdk/errs"
 )
 
 func main() {
@@ -72,10 +71,11 @@ func main() {
 }
 
 func hack2(conn *websocket.Conn, meUser chatapp.User, toUser chatapp.User) error {
-	defer conn.Close()
+	fmt.Println("start hack2")
+
 	_, data, err := conn.ReadMessage()
 	if err != nil {
-		return errs.Newf(errs.Internal, "error reading msg from connection %s: ", err.Error())
+		return fmt.Errorf("error reading msg from connection %s: ", err.Error())
 	}
 	if string(data) != "HELLO" {
 		return fmt.Errorf("error unexpected handshake message")
@@ -87,6 +87,7 @@ func hack2(conn *websocket.Conn, meUser chatapp.User, toUser chatapp.User) error
 		return fmt.Errorf("error marshling user struct: %s", err.Error())
 	}
 
+	fmt.Println("user from clien %w", meUser)
 	// send this data to the server
 
 	err = conn.WriteMessage(websocket.TextMessage, data)
@@ -117,6 +118,7 @@ func hack2(conn *websocket.Conn, meUser chatapp.User, toUser chatapp.User) error
 				return
 			}
 			fmt.Println("\nmessage from server: ", outMessage.Msg)
+			// fmt.Println("msg type: ", msgType)
 
 		}
 	}()

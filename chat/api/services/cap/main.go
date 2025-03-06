@@ -25,7 +25,7 @@ func main() {
 	traceIdFun := func(cxt context.Context) string {
 		return web.GetTraceId(cxt).String()
 	}
-	log := logger.New(os.Stdout, logger.LevelDebug, "CAP", traceIdFun)
+	log := logger.New(os.Stdout, logger.LevelInfo, "CAP", traceIdFun)
 	log.Info(cxt, "intialize the CAP service", "name", slog.StringValue("omer"))
 	// doneChan := make(chan bool, 1)
 	if err := run(cxt, log); err != nil {

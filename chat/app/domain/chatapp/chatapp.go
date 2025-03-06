@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat"
+	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat/users"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/errs"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/logger"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/web"
@@ -19,7 +20,8 @@ type app struct {
 }
 
 func NewApp(log *logger.Logger) *app {
-	return &app{log: log, chat: chat.NewChat(log)}
+	users := users.NewUsers(log)
+	return &app{log: log, chat: chat.NewChat(log, users)}
 }
 func (a app) Test(cxt context.Context, r *http.Request) web.Encoder {
 	// w := web.GetWriter(cxt)
