@@ -23,6 +23,12 @@ type Connection struct {
 
 type InMessage struct {
 	ToId uuid.UUID `json:"toId"`
+	// From User   `json:"from"`
+	Msg string `json:"msg"`
+}
+type InMessageBus struct {
+	From User      `json:"from"`
+	ToId uuid.UUID `json:"toiD"`
 	Msg  string    `json:"msg"`
 }
 type OutMessage struct {

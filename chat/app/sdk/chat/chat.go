@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/errs"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/logger"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/web"
@@ -31,20 +32,33 @@ type Users interface {
 }
 
 type Chat struct {
-	log *logger.Logger
-
-	users Users
+	log      *logger.Logger
+	subject  string
+	js       jetstream.JetStream
+	users    Users
+	stream   jetstream.Stream
+	Consumer jetstream.Consumer
 }
 
-func NewChat(log *logger.Logger, users Users) *Chat {
+func NewChat(log *logger.Logger, users Users, js jetstream.JetStream, stream jetstream.Stream, subject string) (*Chat, error) {
 
-	cht := &Chat{
-		log:   log,
-		users: users,
+	// here we need to create a stream
+	cons, err := stream.Consumer(context.Background(), "omerconsumer")
+	if err != nil {
+		return nil, err
 	}
+	cht := &Chat{
+		log:      log,
+		users:    users,
+		subject:  subject,
+		js:       js,
+		stream:   stream,
+		Consumer: cons,
+	}
+
 	maxWait := time.Second * 10
 	cht.ping(maxWait)
-	return cht
+	return cht, nil
 }
 
 func (cht *Chat) Handshake(cxt context.Context, w http.ResponseWriter, r *http.Request) (User, error) {
@@ -152,7 +166,12 @@ func (cht *Chat) Listen(cxt context.Context, from User) {
 		to, err := cht.users.RetrieveUser(msg.ToId)
 		if err != nil {
 			if errors.Is(err, ErrUserNotExist) {
-				cht.SendToBus(msg)
+				msgBus := InMessageBus{
+					ToId: msg.ToId,
+					From: from,
+					Msg:  msg.Msg,
+				}
+				cht.publishMessage(cxt, msgBus)
 				cht.log.Info(cxt, "message send to bus", "from", from.Id, "id", to.Id)
 
 				continue
@@ -164,24 +183,88 @@ func (cht *Chat) Listen(cxt context.Context, from User) {
 			cht.log.Info(cxt, "listen send message ", "status", "failed", "err", err)
 
 		}
-		cht.log.Info(cxt, "message send", "from", from.Id, "id", msg.ToId)
+		cht.log.Info(cxt, "message send", "from", from.Id, "id", to.Id)
 
 	}
 
 }
 
-func (cht *Chat) SendToBus(inMsg InMessage) {
+// publishMessage will publish messgae to the stream
+func (cht *Chat) publishMessage(cxt context.Context, inMsg InMessageBus) error {
+	// here we need to push this message on the nats strem
+	cht.log.Info(cxt, "publish message bus", "status", "start")
+
+	data, err := json.Marshal(inMsg)
+	if err != nil {
+
+		return fmt.Errorf("publish msg bus, error marshal %w", err)
+	}
+	ack, err := cht.js.Publish(cxt, cht.subject, data)
+	if err != nil {
+		return fmt.Errorf("error publishing message: %w", err)
+	}
+	cht.log.Info(cxt, "publish message bus", "status", "success", "stream", ack.Stream, "sequence", ack.Sequence)
+
+	return nil
 }
 
-func (cht *Chat) listenBus() {
+// listenBus listen for incomming messages and direct them to users
+// i think it is app level not connection level
+func (cht *Chat) ListenBus(cxt context.Context, consumer jetstream.Consumer) {
+	cht.log.Info(cxt, "listen bus", "status", "started")
+	defer cht.log.Info(cxt, "listen bus", "status", "completed")
+
+	go func() {
+		for {
+			// we want to get messages from the stream
+			// Next is used to retrieve the next message from the consumer.
+			// This method will block until the message is retrieved or timeout is reached.
+
+			msg, err := consumer.Next()
+			if err != nil {
+				cht.log.Info(cxt, "listen bus consume", "error", err.Error())
+				continue
+			}
+			if err = msg.Ack(); err != nil {
+				cht.log.Info(cxt, "listen bus ack", "error", err.Error())
+				continue
+			}
+			// unmarshal msg
+			var msgBus InMessageBus
+			err = json.Unmarshal(msg.Data(), &msgBus)
+			if err != nil {
+				cht.log.Info(cxt, "listen bus unmarshal", "error", err.Error())
+
+				continue
+			}
+
+			if err = cht.sendMessageFromBus(msgBus); err != nil {
+				cht.log.Info(cxt, "listen bus send message", "error", err.Error())
+				continue
+			}
+
+		}
+	}()
+
+}
+func (cht *Chat) sendMessageFromBus(message InMessageBus) error {
+
+	// we need to write message to the connection of the to user
+	msg := OutMessage{
+		From: message.From,
+		Msg:  message.Msg,
+	}
+	if err := message.From.Conn.WriteJSON(msg); err != nil {
+		// here also if we can't send message
+		// mostprobably the connection is problematic or may be closed
+		return fmt.Errorf("error send msg to user: %w ", err)
+	}
+	return nil
+
 }
 
 func (cht *Chat) sendMessage(from User, to User, message InMessage) error {
 
-	to, err := cht.users.RetrieveUser(message.ToId)
-	if err != nil {
-		return err
-	}
 	// we need to write message to the connection of the to user
 	msg := OutMessage{
 		From: from,

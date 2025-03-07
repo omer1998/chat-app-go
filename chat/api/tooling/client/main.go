@@ -143,8 +143,6 @@ func hack2(conn *websocket.Conn, meUser chatapp.User, toUser chatapp.User) error
 
 	}
 
-	// here we want to send msg to specific user
-	return nil
 }
 func hack1(clientConn *websocket.Conn) {
 
