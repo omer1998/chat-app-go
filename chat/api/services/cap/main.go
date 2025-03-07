@@ -11,6 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+	"github.com/omer1998/chat-app-go.git/chat/app/domain/chatapp"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/mux"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/logger"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/web"
@@ -38,13 +41,45 @@ func main() {
 }
 
 func run(cxt context.Context, log *logger.Logger) error {
-
+	// here we need to open the server we need to reach listen and serve
+	// configure nats connection and jetstream
 	log.Info(cxt, "Start up", "GOMAXPROS", runtime.GOMAXPROCS(0))
 	defer log.Info(cxt, "shutdown complete")
 
-	// here we need to open the server we need to reach listen and serve
+	// >==================================================================
+	nc, err := nats.Connect("demo.nats.io")
+	if err != nil {
+		return fmt.Errorf("error nats connection: %w", err)
+	}
+	defer nc.Close()
 
-	webApi := mux.WebAPI(mux.Config{Log: log})
+	js, err := jetstream.New(nc)
+	if err != nil {
+		return fmt.Errorf("error creating jetstream: %w", err)
+	}
+	sub := "omercap"
+	// creating stream
+	s, err := js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
+		Name:     sub,
+		Subjects: []string{sub},
+	})
+	if err != nil {
+		return fmt.Errorf("error creating stream: %w", err)
+	}
+	//create or update consummer
+	_, err = s.CreateOrUpdateConsumer(cxt, jetstream.ConsumerConfig{
+		Name:      "omerconsumer",
+		AckPolicy: jetstream.AckExplicitPolicy,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating consumer: %w", err)
+	}
+
+	a, err := chatapp.NewApp(log, js, sub, s)
+	if err != nil {
+		return fmt.Errorf("error creating app: %w", err)
+	}
+	webApi := mux.WebAPI(mux.Config{Log: log, Js: js, Subject: sub, Stream: s, Api: a})
 	if webApi == nil {
 		log.Error(cxt, "webApi is nil")
 		return fmt.Errorf("webApi is nil")
