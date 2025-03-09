@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/omer1998/chat-app-go.git/chat/app/domain/chatapp"
@@ -47,6 +51,36 @@ func run(cxt context.Context, log *logger.Logger) error {
 	defer log.Info(cxt, "shutdown complete")
 
 	// >==================================================================
+	// retrieve or set cap id
+
+	filePath := filepath.Join("../../../zarf/")
+	_, err := os.Stat(filePath)
+	if errors.Is(err, os.ErrNotExist) {
+		err = os.MkdirAll(filePath, os.ModePerm)
+		if err != nil {
+			return fmt.Errorf("error making dir path for cap file: %w", err)
+		}
+		f, err := os.Create(filePath + "/" + "cap.id")
+		if err != nil {
+			return fmt.Errorf("error creating cap file: %w", err)
+		}
+		_, err = f.WriteString(uuid.NewString())
+		if err != nil {
+			return fmt.Errorf("error writing cap file: %w", err)
+		}
+		f.Close()
+	}
+	f, err := os.Open(filePath + "/" + "cap.id")
+	if err != nil {
+		return fmt.Errorf("error opening cap file: %w", err)
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return fmt.Errorf("error reading cap file: %w", err)
+	}
+	capId := string(data)
+
+	// >==================================================================
 	nc, err := nats.Connect("demo.nats.io")
 	if err != nil {
 		return fmt.Errorf("error nats connection: %w", err)
@@ -62,24 +96,33 @@ func run(cxt context.Context, log *logger.Logger) error {
 	s, err := js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
 		Name:     sub,
 		Subjects: []string{sub},
+		MaxAge:   time.Hour * 24,
 	})
+
 	if err != nil {
 		return fmt.Errorf("error creating stream: %w", err)
 	}
+	// consName := uuid.NewString()
 	//create or update consummer
-	_, err = s.CreateOrUpdateConsumer(cxt, jetstream.ConsumerConfig{
-		Name:      "omerconsumer",
-		AckPolicy: jetstream.AckExplicitPolicy,
+
+	cons, err := s.CreateOrUpdateConsumer(cxt, jetstream.ConsumerConfig{
+		Durable:       capId,
+		Name:          capId,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverNewPolicy,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating consumer: %w", err)
 	}
+	// defer s.DeleteConsumer(cxt, "omerconsumer")
 
-	a, err := chatapp.NewApp(log, js, sub, s)
+	capIdUUUID := uuid.MustParse(capId)
+	fmt.Println(">>>>> capIdUUID: ", capIdUUUID)
+	a, err := chatapp.NewApp(log, js, sub, s, cons, capIdUUUID)
 	if err != nil {
 		return fmt.Errorf("error creating app: %w", err)
 	}
-	webApi := mux.WebAPI(mux.Config{Log: log, Js: js, Subject: sub, Stream: s, Api: a})
+	webApi := mux.WebAPI(mux.Config{Log: log, Api: a})
 	if webApi == nil {
 		log.Error(cxt, "webApi is nil")
 		return fmt.Errorf("webApi is nil")

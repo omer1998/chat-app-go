@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat/users"
@@ -20,9 +21,9 @@ type App struct {
 	chat *chat.Chat
 }
 
-func NewApp(log *logger.Logger, js jetstream.JetStream, subject string, stream jetstream.Stream) (*App, error) {
+func NewApp(log *logger.Logger, js jetstream.JetStream, subject string, stream jetstream.Stream, cons jetstream.Consumer, capId uuid.UUID) (*App, error) {
 	users := users.NewUsers(log)
-	chat, err := chat.NewChat(log, users, js, stream, subject)
+	chat, err := chat.NewChat(log, users, js, stream, subject, cons, capId)
 	if err != nil {
 		return nil, err
 	}
@@ -46,14 +47,13 @@ func (a App) connect(cxt context.Context, r *http.Request) web.Encoder {
 	// cxtWithCancel, cancel := context.WithCancel(context.Background())
 	// defer cancel()
 	a.chat.Listen(cxt, user)
-	a.chat.Listen(cxt, user)
 
 	return web.NewNoResponse()
 }
 
 // func WriteMessage(){}
 
-func Routes(app *web.App, log *logger.Logger, js jetstream.JetStream, subject string, stream jetstream.Stream, api *App) {
+func Routes(app *web.App, log *logger.Logger, api *App) {
 	app.HandlerFunc(http.MethodGet, "", "/test", api.Test)
 	app.HandlerFunc(http.MethodGet, "", "/connect", api.connect)
 }

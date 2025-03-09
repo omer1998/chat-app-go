@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/errs"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/logger"
@@ -38,15 +39,16 @@ type Chat struct {
 	users    Users
 	stream   jetstream.Stream
 	Consumer jetstream.Consumer
+	capId    uuid.UUID
 }
 
-func NewChat(log *logger.Logger, users Users, js jetstream.JetStream, stream jetstream.Stream, subject string) (*Chat, error) {
+func NewChat(log *logger.Logger, users Users, js jetstream.JetStream, stream jetstream.Stream, subject string, cons jetstream.Consumer, capId uuid.UUID) (*Chat, error) {
 
 	// here we need to create a stream
-	cons, err := stream.Consumer(context.Background(), "omerconsumer")
-	if err != nil {
-		return nil, err
-	}
+	// cons, err := stream.Consumer(context.Background(), "omercons")
+	// if err != nil {
+	// 	return nil, err
+	// }
 	cht := &Chat{
 		log:      log,
 		users:    users,
@@ -54,7 +56,9 @@ func NewChat(log *logger.Logger, users Users, js jetstream.JetStream, stream jet
 		js:       js,
 		stream:   stream,
 		Consumer: cons,
+		capId:    capId,
 	}
+	cht.ListenBus(context.Background())
 
 	maxWait := time.Second * 10
 	cht.ping(maxWait)
@@ -143,6 +147,7 @@ func (cht *Chat) Handshake(cxt context.Context, w http.ResponseWriter, r *http.R
 func (cht *Chat) Listen(cxt context.Context, from User) {
 
 	for {
+		cht.log.Info(cxt, "listen message", "status", "started")
 
 		data, err := cht.readMessages(cxt, from) //in readmessgae we already handle the logic of removing user if connection closed
 		// here we only need to decide if close error we need to return else continue
@@ -154,7 +159,7 @@ func (cht *Chat) Listen(cxt context.Context, from User) {
 
 		}
 
-		cht.log.Info(cxt, "message recieved", "id", from.Id)
+		cht.log.Info(cxt, "listen >> message recieved", "id", from.Id)
 
 		var msg InMessage
 		err = json.Unmarshal(data, &msg)
@@ -167,12 +172,14 @@ func (cht *Chat) Listen(cxt context.Context, from User) {
 		if err != nil {
 			if errors.Is(err, ErrUserNotExist) {
 				msgBus := InMessageBus{
-					ToId: msg.ToId,
-					From: from,
-					Msg:  msg.Msg,
+					CapId:    cht.capId,
+					ToId:     msg.ToId,
+					FromId:   from.Id,
+					FromName: from.Name,
+					Msg:      msg.Msg,
 				}
 				cht.publishMessage(cxt, msgBus)
-				cht.log.Info(cxt, "message send to bus", "from", from.Id, "id", to.Id)
+				cht.log.Info(cxt, "listen message send to bus", "from", from.Id, "id", msg.ToId)
 
 				continue
 			}
@@ -183,7 +190,9 @@ func (cht *Chat) Listen(cxt context.Context, from User) {
 			cht.log.Info(cxt, "listen send message ", "status", "failed", "err", err)
 
 		}
-		cht.log.Info(cxt, "message send", "from", from.Id, "id", to.Id)
+		cht.log.Info(cxt, "listen >> message send", "from", from.Id, "id", to.Id)
+
+		cht.log.Info(cxt, "listen message", "status", "completed")
 
 	}
 
@@ -210,25 +219,38 @@ func (cht *Chat) publishMessage(cxt context.Context, inMsg InMessageBus) error {
 
 // listenBus listen for incomming messages and direct them to users
 // i think it is app level not connection level
-func (cht *Chat) ListenBus(cxt context.Context, consumer jetstream.Consumer) {
-	cht.log.Info(cxt, "listen bus", "status", "started")
-	defer cht.log.Info(cxt, "listen bus", "status", "completed")
-
+func (cht *Chat) ListenBus(cxt context.Context) {
+	// msgs, err := consumer.Messages()
+	// if err != nil {
+	// 	cht.log.Info(cxt, "listen bus messages", "status", "failed", "error", err)
+	// 	return
+	// }
 	go func() {
+		defer cht.log.Info(cxt, "listen bus", "status", "completed")
+		// defer msgs.Drain()
 		for {
+
+			cht.log.Info(cxt, "listen bus", "status", "started")
 			// we want to get messages from the stream
 			// Next is used to retrieve the next message from the consumer.
 			// This method will block until the message is retrieved or timeout is reached.
 
-			msg, err := consumer.Next()
+			msg, err := cht.readMessagesBus(cxt)
+			// cht.log.Info(cxt, "listen bus readm", "error", err.Error())
+
 			if err != nil {
+
+				// fmt.Println(reflect.TypeOf(err))
+				// fmt.Printf("error consume: err- %s of type: %T", err.Error(), err)
 				cht.log.Info(cxt, "listen bus consume", "error", err.Error())
 				continue
 			}
-			if err = msg.Ack(); err != nil {
-				cht.log.Info(cxt, "listen bus ack", "error", err.Error())
+			if msg == nil {
+				cht.log.Info(cxt, "listen bus msg is nil")
+
 				continue
 			}
+
 			// unmarshal msg
 			var msgBus InMessageBus
 			err = json.Unmarshal(msg.Data(), &msgBus)
@@ -237,8 +259,21 @@ func (cht *Chat) ListenBus(cxt context.Context, consumer jetstream.Consumer) {
 
 				continue
 			}
+			if msgBus.CapId == cht.capId {
+				cht.log.Info(cxt, ">>>> listen bus; message from my cap")
 
-			if err = cht.sendMessageFromBus(msgBus); err != nil {
+				continue
+			}
+			to, err := cht.users.RetrieveUser(msgBus.ToId)
+			if err != nil {
+				cht.log.Info(cxt, "listen bus retrieve to user", "error", "user not found")
+				continue
+
+			}
+			if err = cht.sendMessage(User{
+				Name: msgBus.FromName,
+				Id:   msgBus.FromId,
+			}, to, InMessage{ToId: to.Id, Msg: msgBus.Msg}); err != nil {
 				cht.log.Info(cxt, "listen bus send message", "error", err.Error())
 				continue
 			}
@@ -247,21 +282,83 @@ func (cht *Chat) ListenBus(cxt context.Context, consumer jetstream.Consumer) {
 	}()
 
 }
-func (cht *Chat) sendMessageFromBus(message InMessageBus) error {
 
-	// we need to write message to the connection of the to user
-	msg := OutMessage{
-		From: message.From,
-		Msg:  message.Msg,
-	}
-	if err := message.From.Conn.WriteJSON(msg); err != nil {
-		// here also if we can't send message
-		// mostprobably the connection is problematic or may be closed
-		return fmt.Errorf("error send msg to user: %w ", err)
-	}
-	return nil
+func (cht *Chat) readMessagesBus(cxt context.Context) (jetstream.Msg, error) {
 
+	type response struct {
+		msg jetstream.Msg
+		err error
+	}
+	respChan := make(chan response, 1)
+	go func() {
+		var msg jetstream.Msg
+		var err error
+		cht.log.Info(cxt, "read message bus", "status", "started")
+		defer func() {
+			if msg != nil {
+				cht.log.Info(cxt, "read message bus", "status", "completed", "message", string(msg.Data()), "error", err)
+			} else {
+				cht.log.Info(cxt, "read message bus", "status", "completed", "message", "nil", "error", err)
+			}
+		}()
+		for {
+
+			msg, err = cht.Consumer.Next(jetstream.FetchMaxWait(10 * time.Second))
+			if err != nil {
+				if errors.Is(err, nats.ErrTimeout) {
+					// fmt.Println(">>>> time out now")
+					continue
+				}
+
+				respChan <- response{msg: nil, err: err}
+				break
+			}
+			if cxt.Err() != nil {
+				respChan <- response{msg: nil, err: cxt.Err()}
+				break
+			}
+
+			respChan <- response{msg: msg, err: nil}
+			break
+		}
+
+	}()
+
+	select {
+	case <-cxt.Done():
+		return nil, cxt.Err()
+	case resp := <-respChan:
+		if resp.err != nil {
+			return nil, resp.err
+		}
+		if resp.msg == nil {
+			return nil, fmt.Errorf("recieved nil message")
+		}
+		ackErr := resp.msg.Ack()
+		if ackErr != nil {
+			return nil, fmt.Errorf("ack error: %w", ackErr)
+		}
+		cht.log.Info(cxt, "read message bus ack", "status", "success")
+
+		return resp.msg, nil
+	}
 }
+
+// func (cht *Chat) xsendMessageFromBus(message InMessageBus) error {
+
+// 	// we need to write message to the connection of the to user
+// 	msg := OutMessage{
+// 		From: message.From,
+// 		Msg:  message.Msg,
+// 	}
+// 	if err := message.From.Conn.WriteJSON(msg); err != nil {
+// 		// here also if we can't send message
+// 		// mostprobably the connection is problematic or may be closed
+// 		return fmt.Errorf("error send msg to user: %w ", err)
+// 	}
+// 	return nil
+
+// }
 
 func (cht *Chat) sendMessage(from User, to User, message InMessage) error {
 
@@ -363,7 +460,7 @@ func (cht *Chat) pong(cxt context.Context, userId uuid.UUID) func(appData string
 			cht.log.Info(cxt, "pong handler", "status", "failed", "error", err)
 			return err
 		}
-		cht.log.Info(cxt, "pong handler", "status", "success", "msg", "last pong time updated successfuly")
+		cht.log.Debug(cxt, "pong handler", "status", "success", "msg", "last pong time updated successfuly")
 
 		return nil
 	}
@@ -421,7 +518,7 @@ func (cht *Chat) ping(maxWait time.Duration) {
 				}
 			}
 
-			cht.log.Info(ctx, "Ping", "status", "completed", "connection length", len(cht.users.Connections()))
+			cht.log.Debug(ctx, "Ping", "status", "completed", "connection length", len(cht.users.Connections()))
 
 		}
 	}()

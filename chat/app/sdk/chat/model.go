@@ -27,9 +27,11 @@ type InMessage struct {
 	Msg string `json:"msg"`
 }
 type InMessageBus struct {
-	From User      `json:"from"`
-	ToId uuid.UUID `json:"toiD"`
-	Msg  string    `json:"msg"`
+	CapId    uuid.UUID `json:"capId"`
+	FromId   uuid.UUID `json:"fromId"`
+	FromName string    `json:"fromName"`
+	ToId     uuid.UUID `json:"toiD"`
+	Msg      string    `json:"msg"`
 }
 type OutMessage struct {
 	From User   `json:"to"`
