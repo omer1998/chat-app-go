@@ -58,7 +58,8 @@ func NewChat(log *logger.Logger, users Users, js jetstream.JetStream, stream jet
 		Consumer: cons,
 		capId:    capId,
 	}
-	cht.ListenBus(context.Background())
+	// cht.ListenBus(context.Background())
+	cht.Consumer.Consume(cht.ConsumeMessages(), jetstream.PullMaxMessages(1), jetstream.PullExpiry(time.Second*60))
 
 	maxWait := time.Second * 10
 	cht.ping(maxWait)
@@ -186,7 +187,7 @@ func (cht *Chat) Listen(cxt context.Context, from User) {
 			return
 		}
 
-		if err := cht.sendMessage(from, to, msg); err != nil {
+		if err := cht.sendMessage(from, to, msg.Msg); err != nil {
 			cht.log.Info(cxt, "listen send message ", "status", "failed", "err", err)
 
 		}
@@ -215,6 +216,42 @@ func (cht *Chat) publishMessage(cxt context.Context, inMsg InMessageBus) error {
 	cht.log.Info(cxt, "publish message bus", "status", "success", "stream", ack.Stream, "sequence", ack.Sequence)
 
 	return nil
+}
+
+// consume
+func (cht *Chat) ConsumeMessages() func(jetstream.Msg) {
+	f := func(msg jetstream.Msg) {
+		cht.log.Info(context.Background(), "consume message", "status", "started")
+		defer cht.log.Info(context.Background(), "consume message", "status", "completed")
+
+		var msgBus InMessageBus
+		err := json.Unmarshal(msg.Data(), &msgBus)
+		if err != nil {
+			cht.log.Info(context.Background(), "consume message error unmashal")
+			return
+		}
+		if msgBus.CapId == cht.capId {
+			cht.log.Info(context.Background(), "consume message", "status", "message from my cap", "message", string(msg.Data()))
+
+			return
+		}
+		fromUser := User{
+			Id:   msgBus.FromId,
+			Name: msgBus.FromName,
+		}
+		// toUser is literally me
+		toUser, err := cht.users.RetrieveUser(msgBus.ToId)
+		if err != nil {
+			cht.log.Info(context.Background(), "consume message error retrieve user")
+			return
+		}
+		if err = msg.Ack(); err != nil {
+			cht.log.Info(context.Background(), "consume message error ack ")
+			return
+		}
+		cht.sendMessage(fromUser, toUser, msgBus.Msg)
+	}
+	return f
 }
 
 // listenBus listen for incomming messages and direct them to users
@@ -273,7 +310,7 @@ func (cht *Chat) ListenBus(cxt context.Context) {
 			if err = cht.sendMessage(User{
 				Name: msgBus.FromName,
 				Id:   msgBus.FromId,
-			}, to, InMessage{ToId: to.Id, Msg: msgBus.Msg}); err != nil {
+			}, to, msgBus.Msg); err != nil {
 				cht.log.Info(cxt, "listen bus send message", "error", err.Error())
 				continue
 			}
@@ -360,12 +397,12 @@ func (cht *Chat) readMessagesBus(cxt context.Context) (jetstream.Msg, error) {
 
 // }
 
-func (cht *Chat) sendMessage(from User, to User, message InMessage) error {
+func (cht *Chat) sendMessage(from User, to User, message string) error {
 
 	// we need to write message to the connection of the to user
 	msg := OutMessage{
 		From: from,
-		Msg:  message.Msg,
+		Msg:  message,
 	}
 	if err := to.Conn.WriteJSON(msg); err != nil {
 		// here also if we can't send message
