@@ -128,7 +128,8 @@ func (cht *Chat) Handshake(cxt context.Context, w http.ResponseWriter, r *http.R
 		return User{}, fmt.Errorf("error adding user: %w", err)
 	}
 	// we need to send WELCOME user.name
-	helloName := fmt.Sprintf("WELCOME %s \n id %s", usr.Name, usr.Id)
+	// helloName := fmt.Sprintf("WELCOME %s \n id %s", usr.Name, usr.Id)
+	helloName := fmt.Sprintf("WELCOME %s \n", usr.Name)
 	err = conn.WriteMessage(websocket.TextMessage, []byte(helloName))
 	if err != nil {
 		cht.log.Info(cxt, "handshake", "error sending msg", "error", err)
