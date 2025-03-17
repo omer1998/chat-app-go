@@ -25,11 +25,11 @@ var (
 
 type Users interface {
 	AddUser(user User) error
-	RemoveUser(cxt context.Context, id uuid.UUID) error
-	RetrieveUser(id uuid.UUID) (User, error)
-	Connections() map[uuid.UUID]Connection
-	UpdateLastPingTime(usrId uuid.UUID) error
-	UpdateLastPongTime(usrId uuid.UUID) error
+	RemoveUser(cxt context.Context, id string) error
+	RetrieveUser(id string) (User, error)
+	Connections() map[string]Connection
+	UpdateLastPingTime(usrId string) error
+	UpdateLastPongTime(usrId string) error
 }
 
 type Chat struct {
@@ -488,7 +488,7 @@ func (c *Chat) isCriticalError(ctx context.Context, err error) bool {
 
 }
 
-func (cht *Chat) pong(cxt context.Context, userId uuid.UUID) func(appData string) error {
+func (cht *Chat) pong(cxt context.Context, userId string) func(appData string) error {
 	h := func(appData string) error {
 		cht.log.Debug(cxt, " ** pong handler **", "status", "started")
 		defer cht.log.Debug(cxt, " ** pong handler **", "status", "complete", "appData", appData)

@@ -1,24 +1,24 @@
-package chat
+package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/gorilla/websocket"
-	"github.com/omer1998/chat-app-go.git/chat/app/domain/chatapp"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat"
 )
 
 type Client struct {
-	url  string
-	conn *websocket.Conn
-	user chatapp.User
+	url    string
+	conn   *websocket.Conn
+	config *Config
 }
 
-func NewClient(url string, user chatapp.User) *Client {
-	return &Client{url: url, user: user}
+func NewClient(url string, config *Config) *Client {
+	return &Client{url: url, config: config}
 }
-func (c *Client) Handshake(msgHnadler messageHandler) error {
+func (c *Client) Handshake(uiWriteMsg uiMsgHandler, uiUpdateUser uiUpdateUsers) error {
 
 	dialer := websocket.DefaultDialer
 	clientConn, _, err := dialer.Dial(c.url, nil)
@@ -35,7 +35,7 @@ func (c *Client) Handshake(msgHnadler messageHandler) error {
 	}
 	// here the user send his data
 	// we need to marshal this struct (object) to byte
-	data, err = json.Marshal(c.user)
+	data, err = json.Marshal(c.config.User)
 	if err != nil {
 		return fmt.Errorf("error marshling user struct: %s", err.Error())
 	}
@@ -52,12 +52,12 @@ func (c *Client) Handshake(msgHnadler messageHandler) error {
 	if err != nil {
 		return fmt.Errorf("error reading msg from connection %s: ", err.Error())
 	}
-	msgHnadler("system", string(data))
+	uiWriteMsg("system", string(data))
 
 	// fmt.Println("message from server: ", string(data))
 	// msgsChan := make(chan string)
 	// msgHnadler("--> connected")
-	c.ReadIncMessages(msgHnadler)
+	c.ReadIncMessages(uiWriteMsg, uiUpdateUser)
 
 	return nil
 }
@@ -81,7 +81,7 @@ func (c *Client) Send(msg chat.InMessage) error {
 	return nil
 }
 
-func (c *Client) ReadIncMessages(msgHandler messageHandler) {
+func (c *Client) ReadIncMessages(uiWriteMsg uiMsgHandler, uiUpdateUsers uiUpdateUsers) {
 	msgsChan := make(chan chat.OutMessage)
 	go func() {
 		for {
@@ -96,13 +96,48 @@ func (c *Client) ReadIncMessages(msgHandler messageHandler) {
 				fmt.Printf("error unmarshling msg: %s ", err.Error())
 				return
 			}
+			// fmt.Println("recieved msg >>>>> ", outMessage.Msg)
+			// here we need to look if the from user is present in our contact or not
+			// if present push message in channal directly
+			// if not present we need to do two things :
+			// 1/ update our contact list in config json file
+			// 2/ update the ui to show the new user
+
+			usr, err := c.config.LookUpUser(outMessage.From.Id)
+			if err != nil {
+				if errors.Is(err, errUserNotFound) {
+					// here we add this user to our contact
+					usr := user{Id: outMessage.From.Id, Name: outMessage.From.Name}
+					err := c.config.UpdateContact(usr)
+					// here we need to update the ui (terminal user interface)
+					if err == nil {
+						uiUpdateUsers(user{Id: outMessage.From.Id, Name: outMessage.From.Name})
+						// we also need to add this incoming message to the messages that relate to this user
+						// the whole idea here; we need to save incoming messages from this user in messages field of this user
+						if err := c.config.AddMessage(outMessage.From.Id, fmt.Sprintf("\n%s : %s", outMessage.From.Name, outMessage.Msg)); err != nil {
+							fmt.Printf("error adding msg to user: %s", err.Error())
+							return
+						}
+					} else {
+						uiWriteMsg("system", err.Error())
+
+					}
+
+				}
+			} else { // no error mean the user is found
+				// add message to this user
+				if err := c.config.AddMessage(usr.Id, fmt.Sprintf("\n%s: %s", usr.Name, outMessage.Msg)); err != nil {
+					uiWriteMsg("system", err.Error())
+				}
+			}
 			msgsChan <- outMessage
+
 			// fmt.Println("\nmessage from server: ", outMessage.Msg)
 
 		}
 	}()
 	for {
 		msg := <-msgsChan
-		msgHandler(msg.From.Name, msg.Msg)
+		uiWriteMsg(msg.From.Name, msg.Msg)
 	}
 }

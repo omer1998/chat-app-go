@@ -1,10 +1,9 @@
-package chat
+package app
 
 import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/google/uuid"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat"
 
 	"github.com/rivo/tview"
@@ -16,9 +15,10 @@ type App struct {
 	TvMsgs  *tview.TextView
 	TvUsers *tview.List
 	Client  *Client
+	Config  *Config
 }
 
-func NewApp(client *Client) *App {
+func NewApp(client *Client, config *Config) *App {
 	app := tview.NewApplication()
 	app.EnableMouse(true)
 
@@ -33,8 +33,32 @@ func NewApp(client *Client) *App {
 
 	// =======================================================
 	usersList := tview.NewList()
-	usersList.AddItem("omer faris", "1b0deec0-5c9d-42bd-98ee-59e39d5a8105", 'a', nil)
-	usersList.AddItem("ahmed faris", "6913f142-ffe2-49c7-a222-5a1b1638992b", 'b', nil)
+	usersList.SetTitle("Contacts")
+	// here we update the user/ contact list according to the contacts of this user
+	for index, usr := range client.config.Contacts {
+		usersList.AddItem(usr.Name, usr.Id, rune(index+49), nil)
+	}
+
+	// here we need to read and show the messages that was sent and recieved with this selected user
+	usersList.SetChangedFunc(func(index int, name, id string, shortcut rune) {
+
+		usr, err := config.LookUpUser(id)
+		if err != nil {
+			fmt.Fprintf(msgs, "\nsystem: %s", err.Error())
+		}
+		msgs.Clear()
+		for _, msg := range usr.Messages {
+			fmt.Fprintf(msgs, "%s", msg)
+
+		}
+		// usersList.SetSelectedFunc(func(i int, s1, s2 string, r rune) {
+		// 	usersList.SetItemText(i, )
+		// })
+		usersList.SetItemText(index, usr.Name, id)
+
+	})
+
+	usersList.SetBorder(true)
 	// =======================================================
 	msgInput := tview.NewTextArea().SetPlaceholder("Enter your message here")
 	// msgInput.SetBorder(true)
@@ -51,11 +75,12 @@ func NewApp(client *Client) *App {
 			currentItem := usersList.GetCurrentItem()
 			_, id := usersList.GetItemText(currentItem)
 			// toUser := chatapp.User{Id: uuid.MustParse(id), Name: usrName}
-			err := client.Send(chat.InMessage{ToId: uuid.MustParse(id), Msg: newMsg})
+			err := client.Send(chat.InMessage{ToId: id, Msg: newMsg})
 			if err != nil {
 				fmt.Fprintf(msgs, "\nsystem: %s", err.Error())
 			} else {
-				fmt.Fprintf(msgs, "you: %s\n", newMsg)
+				config.AddMessage(id, fmt.Sprintf("\nyou: %s", newMsg))
+				fmt.Fprintf(msgs, "\nyou: %s", newMsg)
 			}
 
 		}
@@ -76,14 +101,15 @@ func NewApp(client *Client) *App {
 					AddItem(msgInput, 0, 9, true).
 					AddItem(submitBtn, 0, 1, true), 0, 1, false), 0, 10, false)
 
-	return &App{TvApp: app, TvFlex: flex, TvMsgs: msgs, TvUsers: usersList, Client: client}
+	return &App{TvApp: app, TvFlex: flex, TvMsgs: msgs, TvUsers: usersList, Client: client, Config: config}
 }
 
-type messageHandler func(from string, msg string)
+type uiMsgHandler func(from string, msg string)
+type uiUpdateUsers func(usr user)
 
 func (a *App) Run() error {
 
-	go a.Client.Handshake(a.WriteText)
+	go a.Client.Handshake(a.WriteText, a.UpdateUsers)
 
 	// if err != nil {
 	// 	a.WriteText("system: error reading incoming msgs" + err.Error())
@@ -92,8 +118,32 @@ func (a *App) Run() error {
 }
 
 func (a *App) WriteText(from string, text string) {
-	fmt.Fprintf(a.TvMsgs, "%s: %s\n", from, text)
+	currentUserIdx := a.TvUsers.GetCurrentItem()
+	name, _ := a.TvUsers.GetItemText(currentUserIdx)
+	if name == from {
+		//mean the selcted user is the same user who send this message so we display the message directly
+		fmt.Fprintf(a.TvMsgs, "\n------")
+		fmt.Fprintf(a.TvMsgs, "\n%s: %s", from, text)
+	} else {
+		//if the selected user on screen (terminal) is not the user who send this message we need to modify the name of the user who send this message
+		// in order to indicate there is a new message from this usere
+		for _, usr := range a.Config.Contacts {
+			if usr.Name == from {
+				fromUserIndex := a.TvUsers.FindItems(usr.Name, usr.Id, false, true)[0]
+				fromName, fromId := a.TvUsers.GetItemText(fromUserIndex)
+				a.TvUsers.SetItemText(fromUserIndex, fmt.Sprintf("* %s", fromName), fromId)
+				a.TvApp.Draw()
 
+			}
+		}
+
+	}
+
+}
+
+func (a *App) UpdateUsers(usr user) {
+	usersNum := a.TvUsers.GetItemCount()
+	a.TvUsers.AddItem(usr.Name, usr.Id, rune(usersNum+49), nil)
 }
 
 // func (a *App) getToUser() chatapp.User {

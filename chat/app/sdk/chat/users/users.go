@@ -6,13 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat"
 	"github.com/omer1998/chat-app-go.git/chat/foundation/logger"
 )
 
 type Users struct {
-	users  map[uuid.UUID]chat.User
+	users  map[string]chat.User
 	muUser sync.RWMutex
 	log    *logger.Logger
 }
@@ -20,7 +19,7 @@ type Users struct {
 func NewUsers(log *logger.Logger) *Users {
 	return &Users{
 		log:   log,
-		users: make(map[uuid.UUID]chat.User),
+		users: make(map[string]chat.User),
 	}
 }
 
@@ -37,7 +36,7 @@ func (u *Users) AddUser(usr chat.User) error {
 	return nil
 }
 
-func (u *Users) RemoveUser(cxt context.Context, id uuid.UUID) error {
+func (u *Users) RemoveUser(cxt context.Context, id string) error {
 	u.muUser.Lock()
 	defer u.muUser.Unlock()
 	v, exist := u.users[id]
@@ -51,7 +50,7 @@ func (u *Users) RemoveUser(cxt context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (u *Users) RetrieveUser(id uuid.UUID) (chat.User, error) {
+func (u *Users) RetrieveUser(id string) (chat.User, error) {
 	u.muUser.RLock()
 	defer u.muUser.RUnlock()
 	usr, exist := u.users[id]
@@ -61,10 +60,10 @@ func (u *Users) RetrieveUser(id uuid.UUID) (chat.User, error) {
 	return usr, nil
 }
 
-func (u *Users) Connections() map[uuid.UUID]chat.Connection {
+func (u *Users) Connections() map[string]chat.Connection {
 	u.muUser.RLock()
 	defer u.muUser.RUnlock()
-	connections := make(map[uuid.UUID]chat.Connection)
+	connections := make(map[string]chat.Connection)
 	for k, v := range u.users {
 		connections[k] = chat.Connection{
 			Conn:     v.Conn,
@@ -75,7 +74,7 @@ func (u *Users) Connections() map[uuid.UUID]chat.Connection {
 	return connections
 }
 
-func (u *Users) UpdateLastPingTime(usrId uuid.UUID) error {
+func (u *Users) UpdateLastPingTime(usrId string) error {
 	u.muUser.Lock()
 	defer u.muUser.Unlock()
 	usr, exist := u.users[usrId]
@@ -88,7 +87,7 @@ func (u *Users) UpdateLastPingTime(usrId uuid.UUID) error {
 
 	return nil
 }
-func (u *Users) UpdateLastPongTime(usrId uuid.UUID) error {
+func (u *Users) UpdateLastPongTime(usrId string) error {
 	u.muUser.Lock()
 	defer u.muUser.Unlock()
 	usr, exist := u.users[usrId]

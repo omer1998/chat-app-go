@@ -8,7 +8,7 @@ import (
 )
 
 type User struct {
-	Id       uuid.UUID
+	Id       string
 	Name     string
 	Conn     *websocket.Conn
 	LastPing time.Time
@@ -22,15 +22,15 @@ type Connection struct {
 }
 
 type InMessage struct {
-	ToId uuid.UUID `json:"toId"`
+	ToId string `json:"toId"`
 	// From User   `json:"from"`
 	Msg string `json:"msg"`
 }
 type InMessageBus struct {
 	CapId    uuid.UUID `json:"capId"`
-	FromId   uuid.UUID `json:"fromId"`
+	FromId   string    `json:"fromId"`
 	FromName string    `json:"fromName"`
-	ToId     uuid.UUID `json:"toiD"`
+	ToId     string    `json:"toiD"`
 	Msg      string    `json:"msg"`
 }
 type OutMessage struct {

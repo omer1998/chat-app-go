@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/omer1998/chat-app-go.git/chat/app/domain/chatapp"
 	"github.com/omer1998/chat-app-go.git/chat/app/sdk/chat"
@@ -47,16 +46,16 @@ func main2() {
 		"ahmed faris",
 	}
 	var name string
-	var userId uuid.UUID
-	var toUserId uuid.UUID
+	var userId string
+	var toUserId string
 	switch id {
 	case 0:
-		userId, _ = uuid.Parse(usersId[0])
-		toUserId, _ = uuid.Parse(usersId[1])
+		userId = usersId[0]
+		toUserId = usersId[1]
 		name = names[0]
 	case 1:
-		userId, _ = uuid.Parse(usersId[1])
-		toUserId, _ = uuid.Parse(usersId[0])
+		userId = usersId[1]
+		toUserId = usersId[0]
 		name = names[1]
 
 	}
@@ -137,7 +136,7 @@ func hack2(conn *websocket.Conn, meUser chatapp.User, toUser chatapp.User) error
 		if err != nil {
 			conn.Close()
 
-			return fmt.Errorf("error writing message to %s, err : %s", toUser.Id.String(), err.Error())
+			return fmt.Errorf("error writing message to %s, err : %s", toUser.Id, err.Error())
 
 		}
 
