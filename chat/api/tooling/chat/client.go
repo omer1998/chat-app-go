@@ -48,11 +48,11 @@ func (c *Client) Handshake(uiWriteMsg uiMsgHandler, uiUpdateUser uiUpdateUsers) 
 	}
 
 	// read another messhage from server
-	_, data, err = c.conn.ReadMessage()
+	_, _, err = c.conn.ReadMessage()
 	if err != nil {
 		return fmt.Errorf("error reading msg from connection %s: ", err.Error())
 	}
-	uiWriteMsg("system", string(data))
+	// uiWriteMsg("system", string(data))
 
 	// fmt.Println("message from server: ", string(data))
 	// msgsChan := make(chan string)
@@ -112,23 +112,32 @@ func (c *Client) ReadIncMessages(uiWriteMsg uiMsgHandler, uiUpdateUsers uiUpdate
 					// here we need to update the ui (terminal user interface)
 					if err == nil {
 						uiUpdateUsers(user{Id: outMessage.From.Id, Name: outMessage.From.Name})
+
 						// we also need to add this incoming message to the messages that relate to this user
 						// the whole idea here; we need to save incoming messages from this user in messages field of this user
-						if err := c.config.AddMessage(outMessage.From.Id, fmt.Sprintf("\n%s : %s", outMessage.From.Name, outMessage.Msg)); err != nil {
-							fmt.Printf("error adding msg to user: %s", err.Error())
-							return
+						// in this function also we persist this msg in specific file related to this user
+						// if err := c.config.AddMessage(
+						// 	outMessage.From.Id, fmt.Sprintf("\n%s : %s", outMessage.From.Name, outMessage.Msg)); err != nil {
+						// 	fmt.Printf("error adding msg to user: %s", err.Error())
+						// 	return
+						// }
+						if err := c.config.AddMessage(usr.Id, fmt.Sprintf("%s: %s\n", usr.Name, outMessage.Msg)); err != nil {
+							uiWriteMsg("system", err.Error())
+
 						}
+						continue
+
 					} else {
 						uiWriteMsg("system", err.Error())
 
 					}
 
 				}
-			} else { // no error mean the user is found
-				// add message to this user
-				if err := c.config.AddMessage(usr.Id, fmt.Sprintf("\n%s: %s", usr.Name, outMessage.Msg)); err != nil {
-					uiWriteMsg("system", err.Error())
-				}
+			} // no error mean the user is found
+			// add message to this user
+			if err := c.config.AddMessage(usr.Id, fmt.Sprintf("\n%s: %s", usr.Name, outMessage.Msg)); err != nil {
+				uiWriteMsg("system", err.Error())
+
 			}
 			msgsChan <- outMessage
 

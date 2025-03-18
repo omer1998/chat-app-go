@@ -38,23 +38,56 @@ func NewApp(client *Client, config *Config) *App {
 	for index, usr := range client.config.Contacts {
 		usersList.AddItem(usr.Name, usr.Id, rune(index+49), nil)
 	}
+	// here we need to load the messages for the current selected user and only if contact has more than one user
+	if usersList.GetItemCount() > 0 {
+		currentUsr := usersList.GetCurrentItem()
+		_, id := usersList.GetItemText(currentUsr)
+		msgs.Clear()
+		// var usrMsgs []string
+
+		usrMsgs := config.GetMsgsFromFile(id)
+		if len(usrMsgs) != 0 {
+			for _, msg := range usrMsgs {
+				fmt.Fprintf(msgs, "\n%s", msg)
+				fmt.Fprintf(msgs, "\n-------")
+
+			}
+		}
+
+	}
 
 	// here we need to read and show the messages that was sent and recieved with this selected user
 	usersList.SetChangedFunc(func(index int, name, id string, shortcut rune) {
+		msgs.Clear()
 
 		usr, err := config.LookUpUser(id)
 		if err != nil {
 			fmt.Fprintf(msgs, "\nsystem: %s", err.Error())
+			return
 		}
-		msgs.Clear()
-		for _, msg := range usr.Messages {
-			fmt.Fprintf(msgs, "%s", msg)
+		// here we need to get all messages that is conducted with this user; including my messages
+		// if this msgs is empty we need to look from messages in our msgs file related to this user
+
+		usrMsgs := config.GetMsgsFromFile(id)
+		if len(usrMsgs) == 0 {
+			return
+		}
+		// fmt.Fprintf(msgs, "\nsystem: %s", usrMsgs)
+		for _, msg := range usrMsgs {
+			fmt.Fprintf(msgs, "\n%s", msg)
+			fmt.Fprintf(msgs, "\n-------")
 
 		}
-		// usersList.SetSelectedFunc(func(i int, s1, s2 string, r rune) {
-		// 	usersList.SetItemText(i, )
-		// })
-		usersList.SetItemText(index, usr.Name, id)
+
+		if index >= 0 {
+			usersList.SetItemText(index, usr.Name, id)
+
+		}
+
+		// // ===> the major problem now is the duplication of views when changing between users
+		// after debusgging; the dublication of the view occur because i was doing fmt.print in getmesgsfrom file function
+
+		// // ===> take a look at the implementation of these features
 
 	})
 
@@ -81,6 +114,8 @@ func NewApp(client *Client, config *Config) *App {
 			} else {
 				config.AddMessage(id, fmt.Sprintf("\nyou: %s", newMsg))
 				fmt.Fprintf(msgs, "\nyou: %s", newMsg)
+				fmt.Fprintf(msgs, "\n-------")
+
 			}
 
 		}
@@ -119,11 +154,22 @@ func (a *App) Run() error {
 
 func (a *App) WriteText(from string, text string) {
 	currentUserIdx := a.TvUsers.GetCurrentItem()
+	if a.TvUsers.GetItemCount() == 0 || currentUserIdx < 0 {
+		fmt.Fprintf(a.TvMsgs, "\nsystem: no users available")
+		return
+	}
 	name, _ := a.TvUsers.GetItemText(currentUserIdx)
+	if from == "system" {
+		fmt.Fprintf(a.TvMsgs, "\n%s: %s", from, text)
+		fmt.Fprintf(a.TvMsgs, "\n------")
+
+		return
+	}
 	if name == from {
 		//mean the selcted user is the same user who send this message so we display the message directly
-		fmt.Fprintf(a.TvMsgs, "\n------")
 		fmt.Fprintf(a.TvMsgs, "\n%s: %s", from, text)
+		fmt.Fprintf(a.TvMsgs, "\n------")
+
 	} else {
 		//if the selected user on screen (terminal) is not the user who send this message we need to modify the name of the user who send this message
 		// in order to indicate there is a new message from this usere
@@ -144,6 +190,7 @@ func (a *App) WriteText(from string, text string) {
 func (a *App) UpdateUsers(usr user) {
 	usersNum := a.TvUsers.GetItemCount()
 	a.TvUsers.AddItem(usr.Name, usr.Id, rune(usersNum+49), nil)
+	a.TvApp.Draw()
 }
 
 // func (a *App) getToUser() chatapp.User {

@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -26,13 +28,16 @@ type document struct {
 type Config struct {
 	User     user
 	Contacts []user
-	FilePath string
+	BasePath string
 }
 
+const configFileName = "config.json"
+
 func NewConfig() (*Config, error) {
-	filePath := filepath.Join("C:/Users/master/Desktop/chat-app-go/chat/zarf", "config.json")
-	if _, err := os.Stat(filePath); err != nil {
-		f, err := os.Create(filePath)
+	basePath := "C:/Users/master/Desktop/chat-app-go/chat/zarf"
+	path := filepath.Join(basePath, configFileName)
+	if _, err := os.Stat(path); err != nil {
+		f, err := os.Create(path)
 		if err != nil {
 			return nil, fmt.Errorf("error creating config file: %w", err)
 		}
@@ -54,11 +59,11 @@ func NewConfig() (*Config, error) {
 		}
 		return &Config{
 			User:     doc.User,
-			FilePath: filePath,
+			BasePath: basePath,
 		}, nil
 
 	}
-	f, err := os.Open(filePath)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("error openning file: %w", err)
 	}
@@ -72,7 +77,7 @@ func NewConfig() (*Config, error) {
 	return &Config{
 		User:     doc.User,
 		Contacts: doc.Contacts,
-		FilePath: filePath,
+		BasePath: basePath,
 	}, nil
 }
 
@@ -92,7 +97,7 @@ func (c *Config) UpdateContact(usr user) error {
 	if err := writeConfig(Config{
 		User:     c.User,
 		Contacts: c.Contacts,
-		FilePath: c.FilePath,
+		BasePath: c.BasePath,
 	}); err != nil {
 		return err
 	}
@@ -106,15 +111,63 @@ func (c *Config) AddMessage(id string, msg string) error {
 			c.Contacts[i] = usr
 		}
 	}
+	filePath := filepath.Join(c.BasePath, id+".msg")
+	if _, err := os.Stat(filePath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// create this file
+			f, err := os.Create(filePath)
+			if err != nil {
+				return fmt.Errorf("error creating msg file: %w", err)
+			}
+			defer f.Close()
+			f.WriteString(msg)
+			return nil
+		}
+		return fmt.Errorf("error stat msgs file: %w", err)
+	}
+	f, err := os.OpenFile(filePath, os.O_APPEND, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("error opening msgs file: %w", err)
+	}
+	defer f.Close()
+	_, err = f.WriteString(msg)
+	if err != nil {
+		return fmt.Errorf("error writing msg to file: %w", err)
+	}
+
 	return nil
+}
+func (c *Config) GetMsgsFromFile(id string) []string {
+	// the file name is constructed like this; id.msg
+	filePath := filepath.Join(c.BasePath, id+".msg")
+	f, err := os.OpenFile(filePath, os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		return []string{}
+	}
+	defer f.Close()
+	var messages []string
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		messages = append(messages, scanner.Text())
+	}
+	// if errors.Is(scanner.Err(), io.EOF) {
+	// 	return messages
+	// } else if scanner.Err() != nil {
+	// 	return []string{}
+
+	// }
+	return messages
+
 }
 
 // ====================================================================================
 
 func writeConfig(cnfg Config) error {
-	f, err := os.Create(cnfg.FilePath)
+	filePath := filepath.Join(cnfg.BasePath, configFileName)
+	f, err := os.Create(filePath)
 	if err != nil {
-		return fmt.Errorf("writeConfig, error create/truncate config file: %w \n path: %s", err, cnfg.FilePath)
+		return fmt.Errorf("writeConfig, error create/truncate config file: %w \n path: %s", err, cnfg.BasePath)
 	}
 	defer f.Close()
 	doc := document{
